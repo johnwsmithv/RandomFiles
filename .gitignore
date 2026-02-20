@@ -1,3 +1,4 @@
 .vscode/
 etc/
 build/
+build_aligned/

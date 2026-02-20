@@ -4,5 +4,8 @@ project(AlgoPractice VERSION 1.0)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+add_compile_options(-Wall -Wextra -Wpedantic)
+
 add_executable(algo algo.cpp)
-target_compile_options(algo PRIVATE "-Wall -Wpedantic -Wextra")
+
+add_executable(duplicate FindTheDuplicate.cpp)

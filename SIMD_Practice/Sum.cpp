@@ -4,6 +4,8 @@
 #include <cmath> // std::log10
 #include <vector>
 #include <iostream>
+#include <new> // std::align_val_t
+#include <cstddef> // std::size_t
 
 #include <xsimd/xsimd.hpp>
 
@@ -29,7 +31,7 @@ double hsum256_pd(__m256d v) {
     return _mm_cvtsd_f64(sum128);
 }
 
-double _sum_avx2(float* data, size_t dataSize) {
+double _sum_avx2(float* __restrict__ data, size_t dataSize) {
     __m256d vsum = _mm256_setzero_pd();
     size_t i = 0;
     for(; i + 8 <= dataSize; i += 8) {
@@ -59,7 +61,7 @@ double _sum_avx2(float* data, size_t dataSize) {
  * @param n The size of the buffer
  * @return double 
  */
-double _sum_avx2_omp(float* data, size_t n) {
+double _sum_avx2_omp(float* __restrict__ data, size_t n) {
     double total = 0.0;
 
     #pragma omp parallel for reduction(+:total)
@@ -92,6 +94,35 @@ double _sum_avx2_omp(float* data, size_t n) {
     size_t remainder = n % 8;
     for (size_t i = n - remainder; i < n; ++i)
         total += data[i];
+
+    return total;
+}
+
+double _sum_avx2_xsimd_omp(float* __restrict__ data, size_t dataSize) {
+    constexpr size_t simdWidth = xsimd::batch<float>::size; // AVX2 floats
+    
+    double total = 0.0;
+
+    #pragma omp parallel reduction(+:total)
+    {
+        xsimd::batch<double> localBatch1(0.f);
+        xsimd::batch<double> localBatch2(0.f);
+
+        #pragma omp for nowait schedule(static)
+        for(size_t i = 0; i < dataSize - dataSize % simdWidth; i+= simdWidth) {
+            auto v = xsimd::load_aligned(&data[i]);
+            auto converted = xsimd::widen(v);
+
+            localBatch1 += xsimd::abs(converted[0]);
+            localBatch2 += xsimd::abs(converted[1]);
+        }
+
+        total += (xsimd::reduce_add(localBatch1) + xsimd::reduce_add(localBatch2));
+    }
+
+    for(size_t i = dataSize - dataSize % simdWidth; i < dataSize; i++) {
+        total += std::abs(data[i]);
+    }
 
     return total;
 }
@@ -190,13 +221,28 @@ float* remap_avx2_scalar_log10(const float* data, int dmin, int mmult, const int
 namespace xs = xsimd;
 
 float* remap_avx2_xsimd(const float* data, int dmin, int mmult, const int rows, const int cols) {
-    double mean = 0.0;
+    constexpr size_t simdWidth = xsimd::batch<float>::size; // AVX2 floats
     const size_t size = rows * cols;
-    #pragma omp parallel for reduction(+:mean)
-    for(size_t i = 0; i < size; i++) {
-        mean += std::abs(data[i]);
+    double total = 0.0;
+
+    #pragma omp parallel reduction(+:total)
+    {
+        xsimd::batch<float> localBatch(0.f);
+
+        #pragma omp for nowait schedule(static)
+        for(size_t i = 0; i < size - size % simdWidth; i+= simdWidth) {
+            auto v = xs::load_aligned(&data[i]);
+            localBatch += xsimd::abs(v);
+        }
+
+        total += xsimd::reduce_add(localBatch);
     }
-    mean /= size;
+
+    for(size_t i = size - size % simdWidth; i < size; i++) {
+        total += std::abs(data[i]);
+    }
+
+    double mean = total / size;
 
     const float C_L = 0.8f * mean;
     const float C_H = mmult * C_L;
@@ -204,18 +250,18 @@ float* remap_avx2_xsimd(const float* data, int dmin, int mmult, const int rows, 
     const float slope = (255 - dmin) / std::log10(C_L);
     const float constant = dmin - (slope * std::log10(C_L));
 
-    float *remappedData = new float[size];
+    constexpr size_t alignment = 64;
+    float *remappedData = new (std::align_val_t{alignment}) float[size];
     const float EPS = 1e-5f;
 
-    size_t simdWidth = 8; // AVX2 floats
-    size_t total = rows * cols;
+    const size_t arrSize = rows * cols;
 
     #pragma omp parallel for
-    for(size_t i = 0; i < total; i += simdWidth) {
-        auto v = xs::load_unaligned(&data[i]);
+    for(size_t i = 0; i < arrSize; i += simdWidth) {
+        auto v = xs::load_aligned(&data[i]);
         v = (slope * xs::log10(xs::max(xs::abs(v), xs::batch(EPS))) + constant);
         v = xs::min(xs::max(v, xs::batch(0.f)), xs::batch(255.f));
-        v.store_unaligned(&remappedData[i]);
+        v.store_aligned(&remappedData[i]);
     }
 
     return remappedData;

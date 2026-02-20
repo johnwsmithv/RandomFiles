@@ -22,16 +22,18 @@ add_library(sum SHARED Sum.cpp)
 target_compile_options(sum PRIVATE
     # -ggdb3
     -mavx2
+    -march=native
+    -mfma
     -fopenmp
 )
 target_include_directories(sum PRIVATE 
-    ../etc/xsimd-13.2.0/include
+    ../etc/xsimd-14.0.0/include
 )
 
 add_executable(u_test_sum test/u_test_sum.cpp)
 target_include_directories(u_test_sum PRIVATE 
     ../etc/googletest-1.16.0/include
-    ../etc/xsimd-13.2.0/include
+    ../etc/xsimd-14.0.0/include
     ../utils/
     ${CMAKE_SOURCE_DIR}
 )
@@ -39,5 +41,7 @@ target_link_directories(u_test_sum PRIVATE ../etc/googletest-1.16.0/lib)
 target_link_libraries(u_test_sum gtest sum)
 target_compile_options(u_test_sum PRIVATE
     -mavx2
+    -march=native
+    -mfma
     -fopenmp
 )

@@ -39,8 +39,14 @@ TEST(Sum, Avx2Sum) {
     watch.stop();
     std::cout << "The test took " << watch.elapsed() << "\n";
 
+    watch.start();
+    double testSum3 = _sum_avx2_xsimd_omp(example.data(), example.size());
+    watch.stop();
+    std::cout << "The test took " << watch.elapsed() << "\n";
+
     EXPECT_FLOAT_EQ(goldSum, testSum);
     EXPECT_FLOAT_EQ(goldSum, testSum2);
+    EXPECT_FLOAT_EQ(goldSum, testSum3);
 }
 
 TEST(Sum, Avx2Remap) {
