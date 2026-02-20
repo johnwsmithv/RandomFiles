@@ -47,5 +47,13 @@ int main() {
     // so we can register a callback function with the Window
     glfwSetFramebufferSizeCallback(window, frameBufferCallback);
 
+    // The glfwWindowShouldClose checks at the beginning of each loop if the Window
+    // has been instructed to close. If so the function will return true, thus
+    // terminating the loop and the program as well.
+    while(!glfwWindowShouldClose(window)) {
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
     return 0;
 }
