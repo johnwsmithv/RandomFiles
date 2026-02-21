@@ -93,7 +93,7 @@ uint32_t createVertexShader() {
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
 
     if(!success) {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        glGetShaderInfoLog(vertexShader, 512, nullptr, infoLog);
         std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" <<
             infoLog << std::endl;
     }
@@ -118,7 +118,7 @@ uint32_t createFragmentShader() {
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
 
     if(!success) {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        glGetShaderInfoLog(fragmentShader, 512, nullptr, infoLog);
         std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" <<
             infoLog << std::endl;
     }
@@ -143,7 +143,7 @@ uint32_t createShaderProgram() {
     glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
 
     if(!success) {
-        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        glGetProgramInfoLog(shaderProgram, 512, nullptr, infoLog);
         std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" <<
             infoLog << std::endl;
     }
@@ -198,6 +198,60 @@ std::tuple<uint32_t, uint32_t> drawTriangle(const std::span<float> vertices) {
     return {VBO, VAO};    
 }
 
+struct Vertex {
+    uint32_t VBO;
+    uint32_t VAO;
+    uint32_t EBO;
+};
+
+Vertex drawRectangle(std::span<float> vertices, std::span<unsigned int> indices) {
+    // In order to render a rectangle, we need to use something called an "Element Buffer Object" (EBO)
+    Vertex vertex;
+
+    glGenVertexArrays(1, &vertex.VAO);
+    glGenBuffers(1, &vertex.VBO);
+    glGenBuffers(1, &vertex.EBO);
+    // We want to bind the Vertex Array Object first, then bind and set vertex buffer(s), 
+    // and then configure vertex attribute(s).
+    glBindVertexArray(vertex.VAO);
+
+    // The buffer type of a vertex buffer object is "GL_ARRAY_BUFFER"
+    // We need to bind the newly created buffer, VBO, to the GL_ARRAY_BUFFER
+    glBindBuffer(GL_ARRAY_BUFFER, vertex.VBO);
+
+    // Now that we have a VBO, we can copy the vertices into the buffers memory
+    // "GL_STATIC_DRAW" specifies how we want the GPU to manage the given data
+    glBufferData(GL_ARRAY_BUFFER, vertices.size_bytes(), vertices.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vertex.EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size_bytes(), indices.data(), GL_STATIC_DRAW);
+
+    // If we want to do some rendering, we need to set up a vertex and fragment shader.
+    // We can use GLSL (OpenGL Shading Language)
+    constexpr uint32_t vertexAttrLocation = 0; // This corresponds to the vertex shader position
+    constexpr bool normalizeData = GL_FALSE;
+    constexpr uint32_t stride = sizeof(vec3);
+    constexpr uint32_t vertexSize = sizeof(vec3) / sizeof(int);
+    glVertexAttribPointer(vertexAttrLocation, vertexSize, GL_FLOAT, normalizeData, stride, (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // note that this is allowed, the call to glVertexAttribPointer registered VBO as 
+    // the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, 
+    // but this rarely happens. Modifying other VAOs requires a call to glBindVertexArray 
+    // anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
+    glBindVertexArray(0);
+
+
+    return vertex;
+}
+
+void drawCircle() {
+    // GL_TRIANGLE_FAN
+}
+
 // Vertex Array Object (VAO) stores:
 // 1. Calls to glEnableVertexAttribArray or glDisableVertexAttribArray
 // 2. Vertex attribute configurations via glVertexAttribPointer
@@ -212,13 +266,31 @@ int main() {
 
     // Since the data is stored (X, Y, Z) and each value is a float, each vertex
     // is 12 bytes, and therefore the stride between vertices is 12 bytes.
-    float vertices[] = {
+    float triangleVertices[] = {
         // X, Y, Z
         -0.5f, -0.5f, 0.0f,
         0.5f, -0.5f, 0.0f,
         0.0f,  0.5f, 0.0f
     };
-    std::span<float> verticesSpan(vertices, 9);
+    std::span<float> triangleVerticesSpan(triangleVertices, 9);
+
+    // In order to remove overhead of needing to specify the same vertices more
+    // than once, we can specify the order in which we want to draw the vertices in!
+    float rectagleVertices[] = {
+        // first triangle
+        0.5f, 0.5f, 0.0f, // top right
+        0.5f, -0.5f, 0.0f, // bottom right
+        // second triangle
+        -0.5f, -0.5f, 0.0f, // bottom left
+        -0.5f, 0.5f, 0.0f // top left
+    };
+    std::span<float> rectangleVerticesSpan(rectagleVertices, 18);
+
+    unsigned int indices[] = {
+        0, 1, 3, // first triangle
+        1, 2, 3, // second triangle
+    };
+    std::span<unsigned int> rectangleIndicesSpan(indices, 6);
 
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -251,7 +323,11 @@ int main() {
     const auto shaderProgram = createShaderProgram();
 
     // We need to now specify how OpenGL should interpret the vertex data before rendering
-    auto [VBO, VAO] = drawTriangle(verticesSpan);
+    // auto [VBO, VAO] = drawTriangle(verticesSpan);
+    auto vertex = drawRectangle(rectangleVerticesSpan, rectangleIndicesSpan);
+
+    // uncomment this call to draw in wireframe polygons.
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     // The glfwWindowShouldClose checks at the beginning of each loop if the Window
     // has been instructed to close. If so the function will return true, thus
@@ -263,17 +339,24 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         // Now we can render the object with the shader program
-        // Draw the object
+        // To draw the triangle
+        // glUseProgram(shaderProgram);
+        // glBindVertexArray(VAO);
+        // glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        // To draw the Rectangle
         glUseProgram(shaderProgram);
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(vertex.VAO);
+        /// Takes the indices from the EBO bound to the GL_ELEMENT_ARRAY_BUFFER
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
         
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
+    glDeleteVertexArrays(1, &vertex.VAO);
+    glDeleteBuffers(1, &vertex.VBO);
+    glDeleteBuffers(1, &vertex.EBO);
     glDeleteProgram(shaderProgram);
 
     // We need to ensure we call this function so the system can reclaim its resources!
