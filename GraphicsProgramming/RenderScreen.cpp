@@ -4,6 +4,8 @@
 #include <iostream> // std::cout
 #include <tuple> // std::tuple
 #include <span> // std::span
+#include <vector> // std::vector
+#include <cmath> // std::sin, std::cos, etc
 
 // TODO: This is not ideal and we want to read the file source in
 //       so we don't have to copy pasta it here.
@@ -41,6 +43,12 @@ void frameBufferCallback(GLFWwindow* window, int width, int height) {
     (void)window; // Doing this to ignore the unused variable warning from the compiler
 }
 
+struct Vertex {
+    uint32_t VBO;
+    uint32_t VAO;
+    uint32_t EBO;
+};
+
 struct vec2 {
     int x;
     int y;
@@ -62,6 +70,11 @@ struct Blackhole {
     // The formula is 2GM / c^2
     double r_s;
 
+    std::vector<float> circleVertices {
+        0.f, 0.f, 0.f,
+    };
+    std::vector<int> circleIndices;
+
     Blackhole(vec2 position, double mass)
         : position(position), mass(mass)
     {
@@ -72,8 +85,78 @@ struct Blackhole {
         this->r_s = (2 * gravitationalConstant * this->mass) / (speedOfLight * speedOfLight);
     }
 
-    void drawCircle() {
-        // glad_glColor3
+    Vertex drawCircle() {
+        // Let's say I want to have 100 vertices in my circle
+        for(int i = 0; i <= 100; i++) {
+            const float angle = 2.f * M_PI * i / 100.f;
+            // Temporarily just use the angle to get the indices right
+            const float x = std::cos(angle); // * this->r_s + position.x;
+            const float y = std::sin(angle); // * this->r_s + position.y;
+            // For now the Z is going to be zero, but this might change
+            const float z = 0;
+
+            // std::cout << "(" << x << ", " << y << ", " << z << ")\n";
+
+            circleVertices.push_back(x);
+            circleVertices.push_back(y);
+            circleVertices.push_back(z);
+
+            if(i < 100) {
+                // This means that we create the first new two vertices
+                // (plus the origin (0, 0, 0)), so each subsequent
+                // vertex can create a new triangle
+                circleIndices.push_back(0);
+                circleIndices.push_back(i + 1);
+                circleIndices.push_back(i + 2);
+            } else if(i == 100) {
+                // We want to wrap around again!
+                circleIndices.push_back(0);
+                circleIndices.push_back(i);
+                circleIndices.push_back(1);
+            }
+        }
+
+        // In order to render a rectangle, we need to use something called an "Element Buffer Object" (EBO)
+        Vertex vertex;
+
+        glGenVertexArrays(1, &vertex.VAO);
+        glGenBuffers(1, &vertex.VBO);
+        glGenBuffers(1, &vertex.EBO);
+        // We want to bind the Vertex Array Object first, then bind and set vertex buffer(s), 
+        // and then configure vertex attribute(s).
+        glBindVertexArray(vertex.VAO);
+
+        // The buffer type of a vertex buffer object is "GL_ARRAY_BUFFER"
+        // We need to bind the newly created buffer, VBO, to the GL_ARRAY_BUFFER
+        glBindBuffer(GL_ARRAY_BUFFER, vertex.VBO);
+
+        // Now that we have a VBO, we can copy the vertices into the buffers memory
+        // "GL_STATIC_DRAW" specifies how we want the GPU to manage the given data
+        glBufferData(GL_ARRAY_BUFFER, circleVertices.size() * sizeof(float), circleVertices.data(), GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vertex.EBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, circleIndices.size() * sizeof(int), circleIndices.data(), GL_STATIC_DRAW);
+
+        // If we want to do some rendering, we need to set up a vertex and fragment shader.
+        // We can use GLSL (OpenGL Shading Language)
+        constexpr uint32_t vertexAttrLocation = 0; // This corresponds to the vertex shader position
+        constexpr bool normalizeData = GL_FALSE;
+        constexpr uint32_t stride = sizeof(vec3);
+        constexpr uint32_t vertexSize = sizeof(vec3) / sizeof(int);
+        glVertexAttribPointer(vertexAttrLocation, vertexSize, GL_FLOAT, normalizeData, stride, (void*)0);
+        glEnableVertexAttribArray(0);
+
+        // note that this is allowed, the call to glVertexAttribPointer registered VBO as 
+        // the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, 
+        // but this rarely happens. Modifying other VAOs requires a call to glBindVertexArray 
+        // anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
+        glBindVertexArray(0);
+
+
+        return vertex;
     }
 };
 
@@ -198,12 +281,6 @@ std::tuple<uint32_t, uint32_t> drawTriangle(const std::span<float> vertices) {
     return {VBO, VAO};    
 }
 
-struct Vertex {
-    uint32_t VBO;
-    uint32_t VAO;
-    uint32_t EBO;
-};
-
 Vertex drawRectangle(std::span<float> vertices, std::span<unsigned int> indices) {
     // In order to render a rectangle, we need to use something called an "Element Buffer Object" (EBO)
     Vertex vertex;
@@ -246,10 +323,6 @@ Vertex drawRectangle(std::span<float> vertices, std::span<unsigned int> indices)
 
 
     return vertex;
-}
-
-void drawCircle() {
-    // GL_TRIANGLE_FAN
 }
 
 // Vertex Array Object (VAO) stores:
@@ -324,10 +397,12 @@ int main() {
 
     // We need to now specify how OpenGL should interpret the vertex data before rendering
     // auto [VBO, VAO] = drawTriangle(verticesSpan);
-    auto vertex = drawRectangle(rectangleVerticesSpan, rectangleIndicesSpan);
+    // auto vertex = drawRectangle(rectangleVerticesSpan, rectangleIndicesSpan);
+    Blackhole blackhole({0, 0}, 8.54e36);
+    auto vertex = blackhole.drawCircle();
 
     // uncomment this call to draw in wireframe polygons.
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     // The glfwWindowShouldClose checks at the beginning of each loop if the Window
     // has been instructed to close. If so the function will return true, thus
@@ -345,10 +420,16 @@ int main() {
         // glDrawArrays(GL_TRIANGLES, 0, 3);
 
         // To draw the Rectangle
+        // glUseProgram(shaderProgram);
+        // glBindVertexArray(vertex.VAO);
+        // /// Takes the indices from the EBO bound to the GL_ELEMENT_ARRAY_BUFFER
+        // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        // To draw the circle
         glUseProgram(shaderProgram);
         glBindVertexArray(vertex.VAO);
         /// Takes the indices from the EBO bound to the GL_ELEMENT_ARRAY_BUFFER
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, blackhole.circleIndices.size(), GL_UNSIGNED_INT, 0);
         
         glfwSwapBuffers(window);
         glfwPollEvents();

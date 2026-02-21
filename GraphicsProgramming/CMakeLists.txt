@@ -18,4 +18,8 @@ add_library(glad SHARED etc/glad/glad.c)
 add_executable(RenderScreen RenderScreen.cpp)
 target_include_directories(RenderScreen PRIVATE etc/)
 target_link_libraries(RenderScreen PRIVATE glfw glad)
-target_compile_options(RenderScreen PRIVATE -Wall -Wextra -Wpedantic -O3)
+target_compile_options(RenderScreen PRIVATE 
+    -Wall -Wextra -Wpedantic
+    $<$<CONFIG:Release>:-O3>
+    $<$<CONFIG:Debug>:-ggdb3>
+)
